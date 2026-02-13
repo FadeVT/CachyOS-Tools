@@ -1,0 +1,63 @@
+#!/bin/bash
+# cachy-update help text
+
+cat << 'EOF'
+cachy-update — Comprehensive update tool for CachyOS
+
+USAGE:
+    cachy-update [OPTIONS] [-- EXTRA_PACMAN_ARGS]
+
+OPTIONS:
+    -a, --aur               Update AUR packages after system update (via paru/yay)
+    -n, --news              Check Arch Linux news before updating
+    --skip-mirrorlist       Don't refresh mirror lists before updating
+    --no-space-check        Skip btrfs-aware disk space check
+    --noconfirm             Auto-confirm pacman prompts (use with caution)
+    -h, --help              Show this help
+
+ENVIRONMENT VARIABLES:
+    SKIP_MIRRORLIST=1       Same as --skip-mirrorlist
+    UPDATE_AUR=1            Same as --aur
+    NO_SPACE_CHECK=1        Same as --no-space-check
+    PACMAN_NOCONFIRM=1      Same as --noconfirm
+    CHECK_NEWS=1            Same as --news
+    CACHY_SNAPSHOT_PACMAN=1 Allow updating while booted into a snapshot
+    PACMAN_EXE=<path>       Use a custom pacman binary
+    PACMAN_EXTRA_OPTS="..." Extra pacman arguments
+
+CONFIG FILE:
+    /etc/cachy-update/config
+    Set environment variables persistently (one per line).
+
+HOTFIXES:
+    /etc/cachy-update/hotfixes.d/*.sh
+    Executable scripts run before the system update.
+    Use for known conflict resolutions or migrations.
+
+LOG FILE:
+    /var/log/cachy-update/cachy-update.log
+
+WHAT IT DOES:
+    1. Self-updates cachy-update if a newer version is available
+    2. Refreshes CachyOS + Arch mirror lists (cachyos-rate-mirrors / rate-mirrors)
+    3. Updates keyrings (archlinux-keyring, cachyos-keyring, chaotic-keyring)
+    4. Runs pre-update hotfixes from /etc/cachy-update/hotfixes.d/
+    5. Performs system update via pacman -Syu, wrapped in auto-pacman for:
+       - Automatic conflict resolution for known package replacements
+       - Btrfs-aware disk space checking (CoW/snapshot aware)
+       - Automatic retry on corrupt downloads or connection failures
+       - Auto-overwrite of harmless python cache conflicts
+    6. Optionally updates AUR packages (--aur)
+    7. Post-update: updates file databases, fish completions
+    8. Reports orphans, .pacnew files, and kernel updates needing reboot
+
+EXAMPLES:
+    cachy-update                       Standard update
+    cachy-update -a                    Update system + AUR
+    cachy-update --skip-mirrorlist     Skip mirror refresh (faster)
+    cachy-update -n                    Show Arch news before updating
+    cachy-update -- --overwrite '*'    Force overwrite file conflicts
+    cachy-update --noconfirm           Non-interactive update
+
+EOF
+exit 0

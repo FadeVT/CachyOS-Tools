@@ -1,0 +1,137 @@
+#!/bin/bash
+# cachy-maintain diagnostics — read-only system diagnostic functions
+# shellcheck disable=SC2015
+
+# ─── Boot performance analysis ───────────────────────────────────────
+do_diag_boot() {
+    echo -e "\n\033[1;33m-->\033[1;34m Boot Performance Analysis\033[0m\n"
+
+    echo -e "\033[1;36m── Overview ──\033[0m"
+    systemd-analyze || true
+    echo
+
+    echo -e "\033[1;36m── Critical Chain ──\033[0m"
+    systemd-analyze critical-chain --no-pager || true
+    echo
+
+    echo -e "\033[1;36m── Slowest 15 Units ──\033[0m"
+    systemd-analyze blame --no-pager | head -15 || true
+}
+
+# ─── Last pacman transaction (color-coded) ───────────────────────────
+do_diag_pacman() {
+    echo -e "\n\033[1;33m-->\033[1;34m Last Pacman Transaction\033[0m\n"
+
+    local pacman_log="/var/log/pacman.log"
+    if [[ ! -f "$pacman_log" ]]; then
+        echo -e "\033[1;31mNo pacman log found at $pacman_log\033[0m"
+        return 1
+    fi
+
+    # Find the start of the last transaction
+    local last_start
+    last_start=$(grep -n '\[ALPM\] transaction started' "$pacman_log" | tail -1 | cut -d: -f1)
+
+    if [[ -z "$last_start" ]]; then
+        echo -e "\033[1;33mNo transactions found in pacman log.\033[0m"
+        return 0
+    fi
+
+    # Extract from last transaction start to end (or EOF)
+    local last_end
+    last_end=$(tail -n +"$last_start" "$pacman_log" | grep -n '\[ALPM\] transaction completed' | head -1 | cut -d: -f1)
+
+    local transaction
+    if [[ -n "$last_end" ]]; then
+        transaction=$(tail -n +"$last_start" "$pacman_log" | head -n "$last_end")
+    else
+        transaction=$(tail -n +"$last_start" "$pacman_log")
+    fi
+
+    # Color-code by action
+    echo "$transaction" | while IFS= read -r line; do
+        case "$line" in
+        *"upgraded"*)
+            echo -e "\033[1;34m$line\033[0m" ;;
+        *"installed"*)
+            echo -e "\033[1;32m$line\033[0m" ;;
+        *"removed"*)
+            echo -e "\033[1;31m$line\033[0m" ;;
+        *"reinstalled"*)
+            echo -e "\033[1;33m$line\033[0m" ;;
+        *"downgraded"*)
+            echo -e "\033[1;35m$line\033[0m" ;;
+        *"warning"*)
+            echo -e "\033[1;33m$line\033[0m" ;;
+        *)
+            echo -e "\033[2m$line\033[0m" ;;
+        esac
+    done
+}
+
+# ─── Current boot errors ─────────────────────────────────────────────
+do_diag_errors() {
+    echo -e "\n\033[1;33m-->\033[1;34m Current Boot Errors (priority: err and above)\033[0m\n"
+    journalctl -p err -b --no-pager || true
+}
+
+# ─── System information ──────────────────────────────────────────────
+do_diag_info() {
+    echo -e "\n\033[1;33m-->\033[1;34m System Information\033[0m\n"
+
+    if command -v inxi >/dev/null; then
+        inxi -Faz 2>/dev/null || inxi -Fz 2>/dev/null || true
+    elif command -v fastfetch >/dev/null; then
+        fastfetch || true
+    elif command -v neofetch >/dev/null; then
+        neofetch || true
+    else
+        echo -e "\033[1;36m── OS ──\033[0m"
+        cat /etc/os-release 2>/dev/null || true
+        echo
+        echo -e "\033[1;36m── Kernel ──\033[0m"
+        uname -a
+        echo
+        echo -e "\033[1;36m── CPU ──\033[0m"
+        lscpu | grep -E "^(Model name|Architecture|CPU\(s\)|Thread)" || true
+        echo
+        echo -e "\033[1;36m── Memory ──\033[0m"
+        free -h
+        echo
+        echo -e "\033[1;36m── Disk ──\033[0m"
+        df -h / /home 2>/dev/null || df -h / || true
+        echo
+        echo -e "\033[2mInstall inxi, fastfetch, or neofetch for more detailed output.\033[0m"
+    fi
+}
+
+# ─── Diagnostics submenu ─────────────────────────────────────────────
+do_diag_menu() {
+    while true; do
+        echo -e "\n\033[1;36m── Diagnostics ──\033[0m"
+        echo -e "  \033[1;32m1)\033[0m Boot performance"
+        echo -e "  \033[1;32m2)\033[0m Last pacman transaction"
+        echo -e "  \033[1;32m3)\033[0m Current boot errors"
+        echo -e "  \033[1;32m4)\033[0m System information"
+        echo -e "  \033[1;32m0)\033[0m Back"
+        echo
+        echo -ne "\033[1;32mSelect an option: \033[0m"
+        read -r choice
+
+        case "$choice" in
+        1) do_diag_boot ;;
+        2) do_diag_pacman ;;
+        3) do_diag_errors ;;
+        4) do_diag_info ;;
+        0) return ;;
+        *)
+            echo -e "\033[1;31mInvalid option.\033[0m"
+            continue
+            ;;
+        esac
+
+        echo
+        echo -ne "\033[2mPress Enter to continue...\033[0m"
+        read -r
+    done
+}

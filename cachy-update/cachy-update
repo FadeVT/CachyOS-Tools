@@ -1,0 +1,66 @@
+#!/bin/bash
+# cachy-update - Comprehensive update tool for CachyOS
+# Inspired by garuda-update from Garuda Linux, adapted for CachyOS
+# shellcheck disable=SC2015
+set -e
+
+VERSION_FLAG=1
+
+self_update() {
+    if [ -v SELF_UPDATE_FAIL ]; then
+        unset SELF_UPDATE_FAIL
+    fi
+    # Let the update script self-update via pacman
+    if [ "$DATABASE_UPDATED" == "force" ]; then
+        $PACMAN -Syy && DATABASE_UPDATED=true || true
+    elif [ "$DATABASE_UPDATED" != "true" ]; then
+        $PACMAN -Sy && DATABASE_UPDATED=true || true
+    fi
+    if [ "$DATABASE_UPDATED" != "true" ]; then
+        SELF_UPDATE_FAIL=1
+    fi
+    $INT
+    if $PACMAN -Qu cachy-update &>/dev/null; then
+        if SNAP_PAC_SKIP=y SKIP_AUTOSNAP='' $PACMAN -Sdd cachy-update --needed --noconfirm; then
+            CACHY_UPDATE_SELFUPDATE="$VERSION_FLAG" exec /usr/local/bin/cachy-update "$@"
+        else
+            SELF_UPDATE_FAIL=1
+        fi
+        $INT
+    fi
+    $INT
+}
+
+# SIGINT handler — some tools (rate-mirrors, reflector) swallow SIGINT
+INT=true
+trap "INT=false" INT
+
+# Show help
+if [ "$1" == "-h" ] || [ "$1" == "--help" ] || [ "$1" == "help" ]; then
+    # shellcheck source=./help
+    source /usr/lib/cachy-update/help
+fi
+
+# Elevate once, preserving relevant env vars
+if [[ $EUID -ne 0 ]]; then
+    exec sudo --preserve-env="SKIP_MIRRORLIST,UPDATE_AUR,PACMAN_EXE,CACHY_SNAPSHOT_PACMAN,PACMAN_EXTRA_OPTS,NO_SPACE_CHECK,PACMAN_NOCONFIRM,CHECK_NEWS" /usr/local/bin/cachy-update "$@"
+    exit 1
+fi
+
+if [ -n "$PACMAN_EXE" ]; then
+    PACMAN="$PACMAN_EXE"
+else
+    PACMAN="pacman"
+fi
+
+export PACMAN
+
+DATABASE_UPDATED=false
+if [ -n "$CACHY_UPDATE_SELFUPDATE" ]; then
+    DATABASE_UPDATED=true
+fi
+
+self_update "$@"
+
+# shellcheck source=./main-update
+source /usr/lib/cachy-update/main-update

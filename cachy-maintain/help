@@ -1,0 +1,42 @@
+#!/bin/bash
+# cachy-maintain help text
+
+cat << 'EOF'
+cachy-maintain — System maintenance & diagnostics tool for CachyOS
+
+USAGE:
+    cachy-maintain [COMMAND] [OPTIONS]
+
+MAINTENANCE COMMANDS:
+    orphans             List and remove orphaned packages
+    cache [--all]       Clean package cache (default: keep 3 versions, --all: keep 1)
+    unlock              Remove stale pacman database lock
+    logs                Clean system logs, thumbnail caches, and font cache
+    pacnew              Handle .pacnew configuration files
+
+DIAGNOSTICS COMMANDS:
+    diag                Interactive diagnostics submenu
+    diag boot           Boot performance analysis (systemd-analyze)
+    diag pacman         Show last pacman transaction (color-coded)
+    diag errors         Show current boot errors from journal
+    diag info           System information (inxi/fastfetch/neofetch)
+
+OPTIONS:
+    -h, --help          Show this help
+
+INTERACTIVE MODE:
+    Run with no arguments for an interactive menu.
+
+LOG FILE:
+    /var/log/cachy-maintain/cachy-maintain.log
+
+EXAMPLES:
+    cachy-maintain                  Interactive menu
+    cachy-maintain orphans          Remove orphaned packages
+    cachy-maintain cache            Clean package cache (keep 3 versions)
+    cachy-maintain cache --all      Aggressive cache clean (keep 1 version)
+    cachy-maintain diag boot        Analyze boot performance
+    cachy-maintain diag errors      Show boot errors
+
+EOF
+exit 0

@@ -1,0 +1,154 @@
+#!/usr/bin/expect -f
+
+if {![exp_debug]} {trap {exit 1} {SIGINT SIGTERM}}
+
+variable noconfirm [string equal $::env(AUTOPACMAN_PACMAN_NOCONFIRM) "1"]
+variable noconfirm_downloading false
+variable total_size 0
+variable download_size 0
+variable conflictsfile_set [expr [info exists ::env(AUTOPACMAN_CONFLICTSFILE)] && [file exist $::env(AUTOPACMAN_CONFLICTSFILE)] ? true : false]
+
+# ─── CachyOS-specific conflict resolution table ──────────────────────
+# [package to be replaced]: [package to be replaced with]
+# Add entries here as CachyOS-specific conflicts arise.
+# Format: old_package new_package_that_replaces_it
+array set auto_replace_conflicts {
+    python-xdg python-pyxdg
+    pipewire-media-session wireplumber
+    qemu-base qemu-desktop
+    jack2 pipewire-jack
+    ananicy-rules cachyos-ananicy-rules-git
+    jre-openjdk jdk-openjdk
+    jre-openjdk-headless {jdk-openjdk jre-openjdk}
+    gnu-netcat openbsd-netcat
+    proton-ge-custom proton-ge-custom-bin
+    nvidia-utils nvidia-580xx-utils
+    opencl-nvidia opencl-nvidia-580xx
+    lib32-nvidia-utils lib32-nvidia-580xx-utils
+    lib32-opencl-nvidia lib32-opencl-nvidia-580xx
+    nvidia-dkms nvidia-580xx-dkms
+    scenefx swayfx
+    exe-thumbnailer icoextract
+}
+
+if { $::conflictsfile_set } {
+    set conflictsfile [open $::env(AUTOPACMAN_CONFLICTSFILE) r]
+    array set auto_replace_conflicts [gets $conflictsfile]
+    close $conflictsfile
+}
+
+proc parseConflicts {first second} {
+    if {[regexp {^(.+)-(?:\d+:)?[^-]+-[^-]+$} $first -> pkgbase]} {
+        set first $pkgbase
+    }
+
+    foreach {key value} [array get ::auto_replace_conflicts] {
+        if { [string equal $second $key] && [lsearch -exact $value $first] != -1 } {
+            send "y\r"
+            return
+        }
+    }
+    if { $::noconfirm } {
+        return
+    } elseif { $::conflictsfile_set } {
+        send "n\r"
+    } else {
+        expect_user -timeout -1 -re "(.*)\n"
+        if {[regexp {^[Yy]$} $expect_out(1,string)]} {
+            set ::auto_replace_conflicts($second) $first
+            send "y\r"
+        } else {
+            send "n\r"
+        }
+    }
+}
+
+proc handleConfirm {} {
+    # Btrfs-aware disk space check at confirmation time
+    if { !([info exists ::env(AUTOPACMAN_NO_SPACE_CHECK)] && [string equal $::env(AUTOPACMAN_NO_SPACE_CHECK) "1"]) } {
+        if {[catch {exec btrfs -- filesystem usage / -m --iec} usage_output] == 0} {
+            if {[regexp {\s+Free \(estimated\):\s+(\d+)\.\d+MiB} $usage_output -> available_space]} {
+                if {[string is double -strict $available_space] && [string is double -strict $::total_size] && $::total_size > 0} {
+                    set needed_space [expr {$::total_size + $::download_size}]
+                    # 1 GiB or 10% buffer, whichever is larger
+                    set buffer [expr max(1024, int($needed_space * 0.1))]
+                    if {($available_space - $buffer) < $needed_space} {
+                        send "n\r"
+                        set ::exit_show_error "\n\033\[1;31mcachy-update: Available disk space on / may be insufficient. Available: ${available_space}MiB, Required: ${needed_space}MiB + ${buffer}MiB buffer.\033\[0m\n\033\[1;34mNote: Net Upgrade Size is not accurate on CoW (btrfs) filesystems due to snapshots.\033\[0m\n\033\[1;34mOverride with: cachy-update --no-space-check\033\[0m\n"
+                        exp_continue
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    # Auto-confirm if noconfirm mode
+    if { $::noconfirm || $::conflictsfile_set } {
+        send "y\r"
+        set ::noconfirm_downloading true
+    }
+}
+
+proc doExit {} {
+    catch wait result
+    if {[info exists ::env(AUTOPACMAN_CONFLICTSFILE)] && ![file exist $::env(AUTOPACMAN_CONFLICTSFILE)] } {
+        set conflictsfile [open $::env(AUTOPACMAN_CONFLICTSFILE) [list WRONLY CREAT EXCL] 0600]
+        puts $conflictsfile [array get ::auto_replace_conflicts]
+        close $conflictsfile
+    }
+    if {[info exists ::exit_show_error]} {
+        exp_send_error $::exit_show_error
+    }
+    exit [lindex $result 3]
+}
+
+spawn {*}$argv
+
+log_user 1
+
+set timeout -1
+
+expect {
+    "Starting full system upgrade..." { }
+    eof doExit
+}
+
+set timeout 15
+
+expect {
+    -re {Replace \S+ with \S+ \[Y\/n\]} { send "y\r"; exp_continue }
+    "resolving dependencies..." { }
+    timeout { }
+    eof doExit
+}
+
+expect {
+    "looking for conflicting packages" { exp_continue }
+    "Enter a number (default=1):" { if { $noconfirm } { send "1\r"; exp_continue; } { interact -o "\r" exp_continue; } }
+    -re {(\S+) and \S+ are in conflict(?: \(\S+\))?. Remove (\S+)\? \[y/N\]} { parseConflicts $expect_out(1,string) $expect_out(2,string); exp_continue }
+    -re {Total Download Size:.*?\s+([0-9.]+)\sMiB} { set download_size $expect_out(1,string); exp_continue }
+    -re {Total Installed Size:.*?\s+([0-9.]+)\sMiB} { set total_size $expect_out(1,string); exp_continue }
+    -re {Proceed with installation.*} { if { [info exists ::env(AUTOPACMAN_LOG)] } { log_file $::env(AUTOPACMAN_LOG) }; handleConfirm }
+    timeout { }
+    eof doExit
+}
+
+if { $noconfirm } {
+    if { $noconfirm_downloading } {
+        set timeout -1
+        expect {
+            -re {Do you want to delete it.*} { send "y\r"; exp_continue }
+            -re {.*\[Y/n\]} { }
+            eof doExit
+        }
+    }
+    exp_send_error "\nUnexpected user input required. Try again without --noconfirm"
+    close
+} else {
+    expect_background {
+        -re {Do you want to delete it.*} { send "y\r"; exp_continue }
+    }
+    catch interact
+}
+doExit

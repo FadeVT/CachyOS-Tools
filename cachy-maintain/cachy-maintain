@@ -1,0 +1,150 @@
+#!/bin/bash
+# cachy-maintain — System maintenance & diagnostics tool for CachyOS
+# Inspired by Garuda Assistant, adapted as a CLI companion to cachy-update
+# shellcheck disable=SC2015
+set -e
+
+VERSION=1
+
+# ─── Help (before sudo escalation) ──────────────────────────────────
+if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "help" ]]; then
+    # shellcheck source=./help
+    source /usr/lib/cachy-maintain/help
+fi
+
+# ─── Elevate once, preserving relevant env vars ─────────────────────
+if [[ $EUID -ne 0 ]]; then
+    exec sudo --preserve-env="SUDO_USER" /usr/local/bin/cachy-maintain "$@"
+    exit 1
+fi
+
+# ─── Logging ────────────────────────────────────────────────────────
+init_logging() {
+    if [[ ! -d /var/log/cachy-maintain/ ]]; then
+        # shellcheck disable=SC2174
+        mkdir -p -m 755 /var/log/cachy-maintain/
+    fi
+    echo -e "\n>-<->-< cachy-maintain at $(date +"%Y-%m-%d %R %Z(%:::z)")\n" >>/var/log/cachy-maintain/cachy-maintain.log
+    exec &> >(stdbuf -i0 -o0 -e0 tee >(sed '/\x1b\[[0-9][EF]/d;/\r[^\n]$/d;s,\x1B\[[0-9;]*[a-zA-Z],,g' >>/var/log/cachy-maintain/cachy-maintain.log))
+}
+
+# ─── Source library files ────────────────────────────────────────────
+# shellcheck source=./maintenance
+source /usr/lib/cachy-maintain/maintenance
+# shellcheck source=./diagnostics
+source /usr/lib/cachy-maintain/diagnostics
+
+# ─── Start logging ──────────────────────────────────────────────────
+init_logging
+
+# ─── Banner ─────────────────────────────────────────────────────────
+show_banner() {
+    echo -e "\n\033[1;36m╔══════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;36m║       cachy-maintain v${VERSION}              ║\033[0m"
+    echo -e "\033[1;36m║   CachyOS System Maintenance Tool    ║\033[0m"
+    echo -e "\033[1;36m╚══════════════════════════════════════╝\033[0m"
+}
+
+# ─── Interactive menu ────────────────────────────────────────────────
+interactive_menu() {
+    show_banner
+
+    while true; do
+        echo -e "\n\033[1;36m── Maintenance ──\033[0m"
+        echo -e "  \033[1;32m1)\033[0m Remove orphaned packages"
+        echo -e "  \033[1;32m2)\033[0m Clean package cache"
+        echo -e "  \033[1;32m3)\033[0m Remove pacman database lock"
+        echo -e "  \033[1;32m4)\033[0m Clean logs & caches"
+        echo -e "  \033[1;32m5)\033[0m Handle .pacnew files"
+        echo -e "\n\033[1;36m── Diagnostics ──\033[0m"
+        echo -e "  \033[1;32m6)\033[0m Boot performance"
+        echo -e "  \033[1;32m7)\033[0m Last pacman transaction"
+        echo -e "  \033[1;32m8)\033[0m Current boot errors"
+        echo -e "  \033[1;32m9)\033[0m System information"
+        echo -e "\n  \033[1;32m0)\033[0m Exit"
+        echo
+        echo -ne "\033[1;32mSelect an option: \033[0m"
+        read -r choice
+
+        case "$choice" in
+        1) do_orphans ;;
+        2) do_cache ;;
+        3) do_unlock ;;
+        4) do_logs ;;
+        5) do_pacnew ;;
+        6) do_diag_boot ;;
+        7) do_diag_pacman ;;
+        8) do_diag_errors ;;
+        9) do_diag_info ;;
+        0)
+            echo -e "\n\033[1;32mDone.\033[0m\n"
+            exit 0
+            ;;
+        *)
+            echo -e "\033[1;31mInvalid option.\033[0m"
+            continue
+            ;;
+        esac
+
+        echo
+        echo -ne "\033[2mPress Enter to continue...\033[0m"
+        read -r
+    done
+}
+
+# ─── CLI dispatch ────────────────────────────────────────────────────
+case "${1:-}" in
+"")
+    interactive_menu
+    ;;
+orphans)
+    show_banner
+    do_orphans
+    ;;
+cache)
+    show_banner
+    do_cache "${2:-}"
+    ;;
+unlock)
+    show_banner
+    do_unlock
+    ;;
+logs)
+    show_banner
+    do_logs
+    ;;
+pacnew)
+    show_banner
+    do_pacnew
+    ;;
+diag)
+    show_banner
+    case "${2:-}" in
+    "")
+        do_diag_menu
+        ;;
+    boot)
+        do_diag_boot
+        ;;
+    pacman)
+        do_diag_pacman
+        ;;
+    errors)
+        do_diag_errors
+        ;;
+    info)
+        do_diag_info
+        ;;
+    *)
+        echo -e "\033[1;31mUnknown diagnostics command: $2\033[0m"
+        echo -e "\033[2mValid: boot, pacman, errors, info\033[0m"
+        exit 1
+        ;;
+    esac
+    ;;
+*)
+    echo -e "\033[1;31mUnknown command: $1\033[0m"
+    echo -e "\033[2mRun 'cachy-maintain --help' for usage.\033[0m"
+    exit 1
+    ;;
+esac
