@@ -28,3 +28,16 @@ sudo bash cachy-maintain/install.sh
 cachy-update --help
 cachy-maintain --help
 ```
+
+## Acknowledgements
+
+These tools are adapted from work by the [Garuda Linux](https://garudalinux.org/) team:
+
+- **cachy-update** is based on [garuda-update](https://gitlab.com/garuda-linux/pkgbuilds/-/tree/main/garuda-update), maintained by TNE and dr460nf1r3 (Nico).
+- **cachy-maintain** is inspired by [Garuda Assistant](https://gitlab.com/garuda-linux/applications/garuda-assistant), a GUI system maintenance tool for Garuda Linux.
+
+Thank you to the Garuda Linux team for their original work.
+
+## License
+
+GPL-3.0 — see the original projects above.
