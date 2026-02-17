@@ -11,9 +11,7 @@ self_update() {
         unset SELF_UPDATE_FAIL
     fi
     # Let the update script self-update via pacman
-    if [ "$DATABASE_UPDATED" == "force" ]; then
-        $PACMAN -Syy && DATABASE_UPDATED=true || true
-    elif [ "$DATABASE_UPDATED" != "true" ]; then
+    if [ "$DATABASE_UPDATED" != "true" ]; then
         $PACMAN -Sy && DATABASE_UPDATED=true || true
     fi
     if [ "$DATABASE_UPDATED" != "true" ]; then
