@@ -352,8 +352,8 @@ fi
 init_logging
 
 echo -e "\n\033[1;36m╔══════════════════════════════════════╗\033[0m"
-echo -e "\033[1;36m║        cachy-update v${VERSION_FLAG}              ║\033[0m"
-echo -e "\033[1;36m║   CachyOS System Update Utility      ║\033[0m"
+echo -e "\033[1;36m║            cachy-update v${VERSION_FLAG}           ║\033[0m"
+echo -e "\033[1;36m║     CachyOS System Update Utility    ║\033[0m"
 echo -e "\033[1;36m╚══════════════════════════════════════╝\033[0m\n"
 
 # Optional: check Arch news
